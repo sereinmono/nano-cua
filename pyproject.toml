@@ -1,0 +1,28 @@
+[project]
+name = "nano-cua"
+version = "0.1.0"
+description = "Minimal, replaceable async GUI-agent base: observer / actor / executor / policy ports around a command-driven loop."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "playwright>=1.45",
+]
+
+[project.scripts]
+nano-cua = "nano_cua.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
