@@ -9,16 +9,24 @@ vocabulary.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 JsonMapping: TypeAlias = Mapping[str, Any]
 """Free-form mapping carried across a port boundary."""
 
 
 def frozen_mapping(data: Mapping[str, Any] | None = None) -> JsonMapping:
-    """Return a read-only view so stale messages cannot expose live state."""
+    """Return a shallow read-only view of ``data``.
+
+    Dataclass construction routes free-form mappings through this helper so a
+    frozen message cannot be mutated after the fact; the core never sees live
+    adapter state through a stale message.
+    """
+    if data is not None and not isinstance(data, Mapping):
+        raise TypeError(f"expected a mapping, got {type(data).__name__}")
     return MappingProxyType(dict(data or {}))
 
 
@@ -40,6 +48,9 @@ class ObservationRequest:
     kind: str | None = None
     metadata: JsonMapping = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", frozen_mapping(self.metadata))
+
 
 @dataclass(frozen=True, slots=True)
 class Observation:
@@ -56,6 +67,9 @@ class Observation:
     captured_at: float
     metadata: JsonMapping = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", frozen_mapping(self.metadata))
+
     @property
     def is_empty(self) -> bool:
         return self.payload is None or len(self.payload) == 0
@@ -69,6 +83,9 @@ class Action:
     kind: str
     args: JsonMapping = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "args", frozen_mapping(self.args))
+
 
 @dataclass(frozen=True, slots=True)
 class ActionResult:
@@ -78,6 +95,9 @@ class ActionResult:
     error: str | None = None
     duration_s: float = 0.0
     output: JsonMapping = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "output", frozen_mapping(self.output))
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +136,9 @@ class AgentContext:
     The Runner replaces this object on every step instead of mutating it, and
     keeps at most a bounded number of recent observations. ``observation_is_fresh``
     says whether the latest observation was captured *after* the last executed
-    action; a policy that only acts on fresh evidence can check it.
+    action; a policy that only acts on fresh evidence can check it. ``step_count``
+    counts accepted Observe/Execute commands (the terminal Finish is recorded in
+    the run result instead).
     """
 
     task: str

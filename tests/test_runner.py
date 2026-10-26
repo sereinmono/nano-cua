@@ -194,6 +194,7 @@ async def test_action_logs_do_not_echo_typed_text():
 async def test_observer_exception_is_reported_as_termination():
     class ExplodingObserver:
         async def observe(self, request: ObservationRequest) -> Observation:
+            await asyncio.sleep(0.01)
             raise RuntimeError("capture failed")
 
     runner, _, _ = build_runner(ScriptedPolicy([Observe()]), observer=ExplodingObserver())
@@ -205,11 +206,16 @@ async def test_observer_exception_is_reported_as_termination():
     assert result.error == "RuntimeError: capture failed"
     assert result.steps[-1].command == "finish"
     assert result.steps[-1].error == "RuntimeError: capture failed"
+    # The failing call's elapsed time is still accounted for.
+    assert result.observation_time_s >= 0.01
+    assert result.steps[-1].work_s >= 0.01
+    assert result.total_time_s >= result.observation_time_s
 
 
 async def test_executor_exception_is_reported_as_termination():
     class ExplodingExecutor:
         async def execute(self, action: Action) -> ActionResult:
+            await asyncio.sleep(0.01)
             raise RuntimeError("execution failed")
 
     policy = ScriptedPolicy([Execute(Action(space="fake", kind="poke"))])
@@ -219,6 +225,8 @@ async def test_executor_exception_is_reported_as_termination():
 
     assert result.success is False
     assert result.error == "RuntimeError: execution failed"
+    assert result.execution_time_s >= 0.01
+    assert result.steps[-1].work_s >= 0.01
 
 
 async def test_unsupported_command_is_reported_as_termination():
@@ -331,10 +339,21 @@ def test_fake_ports_satisfy_the_protocols():
     assert isinstance(BasicPolicy(MockActor([Finish()])), AgentPolicy)
 
 
-def test_agent_context_is_immutable():
+def test_messages_are_immutable_and_mappings_read_only():
     context = AgentContext(task="t")
     with pytest.raises(FrozenInstanceError):
         context.step_count = 1  # type: ignore[misc]
+
+    observation = make_observation("frame")
+    with pytest.raises(TypeError):
+        observation.metadata["injected"] = 1  # type: ignore[index]
+
+    action = Action(space="fake", kind="poke", args={"x": 1})
+    with pytest.raises(TypeError):
+        action.args["x"] = 2  # type: ignore[index]
+
+    with pytest.raises(TypeError):
+        Action(space="fake", kind="poke", args="not-a-mapping")  # type: ignore[arg-type]
 
 
 def test_runner_rejects_bad_limits():

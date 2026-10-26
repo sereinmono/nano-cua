@@ -1,6 +1,6 @@
 """Static checks that the core stays free of concrete I/O and action semantics.
 
-Acceptance item: core files must not import playright / a VLM SDK nor encode
+Acceptance item: core files must not import playwright / a VLM SDK nor encode
 concrete observation or action vocabulary. Only the composition root and the
 adapters are allowed to know those details.
 """
@@ -26,12 +26,25 @@ def _parse(name: str) -> ast.Module:
 
 
 def _imported_modules(tree: ast.Module) -> set[str]:
+    """Absolute module paths, including relative imports resolved to nano_cua.*."""
     modules: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            modules.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 1:
+                # Core modules live directly in the nano_cua package.
+                if node.module:
+                    modules.add(f"nano_cua.{node.module}")
+                else:
+                    modules.update(f"nano_cua.{alias.name}" for alias in node.names)
+            elif node.level > 1:
+                if node.module:
+                    modules.add(node.module)
+                else:
+                    modules.update(alias.name for alias in node.names)
+            elif node.module:
+                modules.add(node.module)
     return modules
 
 
@@ -67,6 +80,16 @@ def test_core_does_not_embed_concrete_action_or_observation_vocabulary():
         assert literals.isdisjoint(FORBIDDEN_LITERALS), f"{name} embeds {sorted(literals & FORBIDDEN_LITERALS)}"
 
 
+def test_separation_helpers_catch_relative_adapter_imports():
+    """The isolation check must not have a relative-import blind spot."""
+    tree = ast.parse("from .adapters.playwright_io import PlaywrightIO")
+    assert "nano_cua.adapters.playwright_io" in _imported_modules(tree)
+    tree = ast.parse("from . import adapters")
+    assert "nano_cua.adapters" in _imported_modules(tree)
+    tree = ast.parse("from .contracts import Action")
+    assert "nano_cua.contracts" in _imported_modules(tree)
+
+
 def test_core_package_import_does_not_pull_in_adapters():
     """Importing nano_cua must not require playwright or httpx to be installed."""
     code = (
@@ -81,5 +104,6 @@ def test_core_package_import_does_not_pull_in_adapters():
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert completed.returncode == 0, completed.stderr

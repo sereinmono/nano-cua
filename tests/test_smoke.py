@@ -18,6 +18,7 @@ from nano_cua.adapters.playwright_io import PlaywrightIO  # noqa: E402
 
 DEMO_PAGE = Path(nano_cua.__file__).parent / "demo_page.html"
 VIEWPORT = (640, 480)
+_MISSING_BROWSER_HINTS = ("Executable doesn't exist", "playwright install", "Failed to launch")
 
 
 async def _launch_or_skip() -> PlaywrightIO:
@@ -31,6 +32,9 @@ async def _launch_or_skip() -> PlaywrightIO:
                 browser_channel=channel,
             )
         except Exception as exc:  # noqa: BLE001 - probe which browser binaries exist
+            if not any(hint in str(exc) for hint in _MISSING_BROWSER_HINTS):
+                # A real launch regression must fail, not be reported as a skip.
+                raise
             errors.append(f"{channel or 'bundled'}: {exc}")
     pytest.skip("no usable chromium browser: " + " | ".join(errors))
 
@@ -71,6 +75,33 @@ async def test_mock_actor_runs_observe_click_observe_finish_on_a_local_page():
         assert result.observation_time_s > 0
         assert result.execution_time_s > 0
         assert result.total_time_s >= result.observation_time_s + result.execution_time_s
+    finally:
+        await io.close()
+
+
+async def test_playwright_execute_never_captures_screenshots(monkeypatch):
+    """Acceptance: only an explicit Observe command may hit page.screenshot."""
+    io = await _launch_or_skip()
+    screenshot_calls = 0
+    original_screenshot = io.page.screenshot
+
+    async def counting_screenshot(*args: object, **kwargs: object) -> bytes:
+        nonlocal screenshot_calls
+        screenshot_calls += 1
+        return await original_screenshot(*args, **kwargs)
+
+    monkeypatch.setattr(io.page, "screenshot", counting_screenshot)
+    try:
+        executed = await io.execute(Action(space="browser", kind="click", args={"x": 5, "y": 5}))
+        assert executed.success is True
+        assert screenshot_calls == 0
+
+        observed = await io.observe(ObservationRequest())
+        assert observed.kind == "screenshot"
+        assert screenshot_calls == 1
+
+        await io.execute(Action(space="browser", kind="click", args={"x": 6, "y": 6}))
+        assert screenshot_calls == 1
     finally:
         await io.close()
 

@@ -102,5 +102,11 @@ def test_normalize_action_rejects_wrong_space_or_kind():
         normalize_action(Action(space=SPACE, kind="click", args={"x": 10, "y": 10}), width=10, height=10)
 
 
+def test_normalize_action_rejects_non_string_argument_names():
+    action = Action(space=SPACE, kind="click", args={1: 2, "x": 1, "y": 1})  # type: ignore[dict-item]
+    with pytest.raises(ActionValidationError, match="names must be strings"):
+        normalize_action(action, width=100, height=100)
+
+
 def test_action_kinds_are_whitelisted():
     assert ACTION_KINDS == ("click", "type_text", "press_key")

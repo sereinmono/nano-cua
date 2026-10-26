@@ -135,6 +135,12 @@ class PlaywrightIO:
                 error=f"rejected {action.space}.{action.kind}: {exc}",
                 duration_s=time.perf_counter() - started,
             )
+        except Exception as exc:  # noqa: BLE001 - a malformed action must not escape
+            return ActionResult(
+                success=False,
+                error=f"rejected {action.space}.{action.kind}: {type(exc).__name__}: {exc}",
+                duration_s=time.perf_counter() - started,
+            )
         try:
             await self._dispatch(normalized)
         except PlaywrightError as exc:

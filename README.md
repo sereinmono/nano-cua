@@ -36,7 +36,7 @@ timings: total=0.302s decision(policy+actor)=0.000s observation=0.294s execution
 counts : observations=2 actions=1 steps=4
 ```
 
-`decision` = Policy 决策耗时（对 `BasicPolicy` 即 Actor/VLM 调用耗时），`observation` = 截图采集耗时，`execution` = 动作执行耗时，`total` = 整任务墙钟时间。
+`decision` = Policy 决策耗时（对 `BasicPolicy` 即 Actor/VLM 调用耗时），`observation` = 截图采集耗时，`execution` = 动作执行耗时，`total` = Runner 循环墙钟时间（不含浏览器启动/关闭）。
 
 常用参数：
 
@@ -61,7 +61,16 @@ export NANO_CUA_API_KEY="..."                     # 本地服务可留空
 uv run nano-cua --actor vlm
 ```
 
-没有 `NANO_CUA_API_BASE` + `NANO_CUA_MODEL` 时 `--actor auto`（默认）自动走 `MockActor`；设置后自动走 VLM。也可显式传 `--api-base/--model/--json-mode`，API Key 只从环境变量读取（避免进入 shell 历史）。
+Windows PowerShell 等价写法：
+
+```powershell
+$env:NANO_CUA_API_BASE = "https://your-host/v1"
+$env:NANO_CUA_MODEL = "your-model-name"
+$env:NANO_CUA_API_KEY = "..."
+uv run nano-cua --actor vlm
+```
+
+没有 `NANO_CUA_API_BASE` + `NANO_CUA_MODEL` 时 `--actor auto`（默认）自动走 `MockActor`；设置后自动走 VLM。只配置其中一项时会警告并回退 Mock。也可显式传 `--api-base/--model/--json-mode`，API Key 只从环境变量读取（避免进入 shell 历史）。
 
 模型只能输出以下 JSON（白名单），其余内容在 `VLMActor` 边界被严格拒绝、不会执行：
 
@@ -98,7 +107,7 @@ Actor.propose(context) -> Action | Finish
 
 关键约束：**Runner 只有收到 `Observe` 命令时才调用 Observer**。Actor 和 Executor 都不能暗中刷新截图，`BasicPolicy` 的"每步观察"只是默认策略行为，可整体替换。
 
-消息类型（`nano_cua/contracts.py`，全部 frozen dataclass）：
+消息类型（`nano_cua/contracts.py`，全部 frozen dataclass，`metadata`/`args`/`output` 在构造时转成只读 MappingProxy）：
 
 | 类型 | 字段 | 说明 |
 | --- | --- | --- |
@@ -202,10 +211,11 @@ nano-cua/
 │       ├── playwright_io.py  # Playwright 实现 Observer + ActionExecutor
 │       └── vlm_actor.py      # OpenAI-compatible VLM → 严格结构化动作
 └── tests/
-    ├── test_runner.py        # Fake ports：循环、上限、异常、计时、上下文
+    ├── test_runner.py        # Fake ports：循环、上限、异常、计时、上下文、消息只读
     ├── test_browser_space.py # 动作白名单/参数校验
     ├── test_vlm_actor.py     # httpx.MockTransport，离线（无 Key/无网络）
     ├── test_separation.py    # 核心与 adapter 的静态隔离检查
+    ├── test_cli.py           # CLI 组合逻辑（actor 解析、错误退出、截图落盘告警），不启动浏览器
     └── test_smoke.py         # 真实 Chromium + 本地 HTML + MockActor
 ```
 
@@ -215,17 +225,18 @@ nano-cua/
 uv run pytest -v
 ```
 
-本机结果：**93 passed**（约 6 秒，含 3 个真实 Chromium 冒烟测试）。覆盖与验收标准对应关系：
+本机结果：**103 passed**（约 8 秒，含 4 个真实 Chromium 冒烟测试，全部离线、无模型 Key）。覆盖与验收标准对应关系：
 
 | 验收点 | 证据 |
 | --- | --- |
 | Fake 端口替换真实 I/O，核心零修改 | `tests/test_runner.py` 全部用例只用 Fake Observer/Executor |
-| Execute 不会隐式截图 | `test_execute_never_triggers_observation`（Observer 调用次数为 0） |
+| Execute 不会隐式截图 | `test_execute_never_triggers_observation`（Observer 调用 0 次）+ `test_playwright_execute_never_captures_screenshots`（真实浏览器里计数 `page.screenshot`：Execute 前后都是 0 次，Observe 恰好 1 次） |
 | 只有 Observe 才取观测 | `test_command_loop_records_steps_and_context`、Runner 源码结构 |
-| 核心无 Playwright/VLM SDK/动作语义耦合 | `tests/test_separation.py`（AST 检查 import + 字面量；子进程验证 `import nano_cua` 不加载 playwright/httpx） |
+| 核心无 Playwright/VLM SDK/动作语义耦合 | `tests/test_separation.py`（AST 检查 import + 字面量，含相对 import 场景；子进程验证 `import nano_cua` 不加载 playwright/httpx） |
 | 无 API Key 可运行 Demo 与单测 | `MockActor` 默认路径；VLM 单测使用 `httpx.MockTransport` |
 | 四段耗时可见 | `RunResult.decision_time_s / observation_time_s / execution_time_s / total_time_s`，CLI 打印 |
-| 无浏览器时可离线跑单测 | `tests/test_smoke.py` 在无浏览器时 `pytest.skip` |
+| 异常路径也有计时与反馈 | `test_observer_exception_is_reported_as_termination` 等断言失败调用耗时仍被计入 |
+| 无浏览器时可离线跑单测 | `tests/test_smoke.py` 仅在“缺少浏览器”时 `pytest.skip`，真实启动错误会失败 |
 
 ## 明确未实现（按计划停在三阶段）
 
@@ -239,9 +250,10 @@ uv run pytest -v
 
 ## 已知限制与说明
 
-- **耗时口径**：`decision` 包含 Policy 调用 + Actor（VLM HTTP）耗时；`observation` 仅截图采集；`execution` 仅动作执行；`total` 为整任务时间。
+- **耗时口径**：`decision` 包含 Policy 调用 + Actor（VLM HTTP）耗时；`observation` 仅截图采集；`execution` 仅动作执行；`total` 为 Runner 循环墙钟时间（不含浏览器启动/关闭）。调用抛异常时，失败调用已耗时间仍计入对应阶段。
 - **截图**：PNG 原图在内存中传递，未自动缩放/压缩；接真实 VLM 时 token 成本由 Observer/Actor 实现决定（可替换 Observer 做缩放）。
-- **落盘**：默认不写截图；只有显式 `--save-screenshot` 才写单个文件，不开启 tracing。
+- **落盘**：默认不写截图；只有显式 `--save-screenshot` 才写单个文件，不开启 tracing；写盘失败只告警，不改变任务退出码。
+- **日志最小化**：动作日志中字符串参数只记录长度（不打印 `type_text` 原文），不打印截图内容或 HTTP 凭据。
 - **环境代理**：某些 Windows 环境 `NO_PROXY` 含 `[::1]` 等条目时 httpx 0.28 无法解析环境代理，`VLMActor` 会自动退化为忽略环境代理的 HTTP client，并在 CLI 的 actor 行标注 `env proxy vars ignored`；需要代理时请修正环境变量。
 - **浏览器**：优先 Playwright Chromium；缺失时 CLI 回退系统 Edge/Chrome，可用 `--browser-channel` 固定。
 - **MockActor**：只按固定脚本行动（演示用：点击页面中心按钮 → finish），不代表任何策略能力。

@@ -78,6 +78,12 @@ def _resolve_actor(args: argparse.Namespace) -> tuple[Actor, str]:
     model = (args.model or _env(_ENV_MODEL)).strip()
     choice = args.actor
     if choice == "auto":
+        if bool(api_base) != bool(model):
+            print(
+                f"note: only one of API base/model is configured; using mock actor "
+                f"(set both {_ENV_API_BASE} and {_ENV_MODEL} for the VLM)",
+                file=sys.stderr,
+            )
         choice = "vlm" if (api_base and model) else "mock"
     if choice == "mock":
         script = _demo_script(args)
@@ -163,8 +169,13 @@ def _save_screenshot(result: RunResult, path_arg: str) -> None:
         print(f"warning: no image observation available for {path_arg}", file=sys.stderr)
         return
     path = Path(path_arg)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(observation.payload)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(observation.payload)
+    except OSError as exc:
+        # Opt-in debug output must not change the task's own exit status.
+        print(f"warning: failed to save screenshot to {path}: {exc}", file=sys.stderr)
+        return
     print(f"screenshot: {path} ({len(observation.payload)} bytes)")
 
 

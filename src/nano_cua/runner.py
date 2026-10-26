@@ -99,13 +99,20 @@ class Runner:
         execution_time_s = 0.0
         outcome: Finish | None = None
         error: str | None = None
+        decision_s = 0.0
+        work_s = 0.0
 
         try:
             while outcome is None:
+                decision_s = 0.0
+                work_s = 0.0
                 decision_started = self._clock()
-                command = await self._policy.next_command(context)
-                decision_s = self._clock() - decision_started
-                decision_time_s += decision_s
+                try:
+                    command = await self._policy.next_command(context)
+                finally:
+                    # Count the failing call's time too, then let the cause surface.
+                    decision_s = self._clock() - decision_started
+                    decision_time_s += decision_s
 
                 if isinstance(command, Finish):
                     outcome = command
@@ -128,9 +135,11 @@ class Runner:
                         steps.append(self._limit_step(steps, outcome, decision_s))
                         continue
                     work_started = self._clock()
-                    observation = await self._observer.observe(command.request)
-                    work_s = self._clock() - work_started
-                    observation_time_s += work_s
+                    try:
+                        observation = await self._observer.observe(command.request)
+                    finally:
+                        work_s = self._clock() - work_started
+                        observation_time_s += work_s
                     context = self._apply_observation(context, observation)
                     steps.append(
                         StepRecord(
@@ -151,9 +160,11 @@ class Runner:
                         steps.append(self._limit_step(steps, outcome, decision_s))
                         continue
                     work_started = self._clock()
-                    result = await self._executor.execute(command.action)
-                    work_s = self._clock() - work_started
-                    execution_time_s += work_s
+                    try:
+                        result = await self._executor.execute(command.action)
+                    finally:
+                        work_s = self._clock() - work_started
+                        execution_time_s += work_s
                     context = self._apply_action_result(context, command.action, result)
                     steps.append(
                         StepRecord(
@@ -176,8 +187,8 @@ class Runner:
                     index=len(steps),
                     command="finish",
                     detail=error,
-                    decision_s=0.0,
-                    work_s=0.0,
+                    decision_s=decision_s,
+                    work_s=work_s,
                     success=False,
                     error=error,
                 )

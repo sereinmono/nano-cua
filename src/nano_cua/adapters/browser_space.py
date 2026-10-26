@@ -74,6 +74,11 @@ def _check_kind(kind: Any) -> str:
 
 
 def _check_args(kind: str, args: Mapping[str, Any]) -> None:
+    if not isinstance(args, Mapping):
+        raise ActionValidationError(f"{kind} arguments must be a mapping, got {type(args).__name__}")
+    non_string_keys = [key for key in args if not isinstance(key, str)]
+    if non_string_keys:
+        raise ActionValidationError(f"action argument names must be strings, got {non_string_keys!r}")
     allowed = _ARGS[kind]
     unknown = sorted(set(args) - allowed)
     if unknown:
