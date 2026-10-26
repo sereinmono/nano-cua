@@ -1,8 +1,10 @@
 """nano-cua: a minimal, replaceable async GUI-agent base.
 
 Four injected ports (Observer / ActionExecutor / Actor / AgentPolicy) around one
-command-driven loop (Runner). Only ``runtime`` dependencies are imported here;
-concrete adapters live in ``nano_cua.adapters`` and are wired by ``nano_cua.cli``.
+command-driven loop (Runner). This package deliberately contains no concrete
+observation space, action space, model SDK or CLI: those belong to external
+compatibility groups (for example the companion ``nano-cua-extensions``
+project) and are injected at composition time.
 """
 
 from .contracts import (
@@ -26,7 +28,7 @@ from .mock import MockActor
 from .policy import BasicPolicy
 from .runner import RunResult, Runner, StepRecord
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "Action",

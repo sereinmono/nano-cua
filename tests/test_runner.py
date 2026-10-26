@@ -332,6 +332,33 @@ async def test_mock_actor_is_offline_and_scripted():
     assert (await actor.propose(AgentContext(task="t"))).reason == "mock script exhausted"
 
 
+async def test_port_group_can_serve_both_ports():
+    """A compatibility group is just an object implementing both I/O ports."""
+
+    class FakeGroup:
+        def __init__(self) -> None:
+            self.observations = 0
+            self.actions: list[Action] = []
+
+        async def observe(self, request: ObservationRequest) -> Observation:
+            self.observations += 1
+            return make_observation(f"group-{self.observations}")
+
+        async def execute(self, action: Action) -> ActionResult:
+            self.actions.append(action)
+            return ActionResult(success=True)
+
+    group = FakeGroup()
+    actor = MockActor([Action(space="fake", kind="poke"), Finish(reason="group done")])
+    runner = Runner(policy=BasicPolicy(actor), observer=group, executor=group, task="group task")
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert group.observations == 2
+    assert len(group.actions) == 1
+
+
 def test_fake_ports_satisfy_the_protocols():
     assert isinstance(FakeObserver(), Observer)
     assert isinstance(FakeExecutor(), ActionExecutor)

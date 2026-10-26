@@ -1,8 +1,9 @@
-"""Static checks that the core stays free of concrete I/O and action semantics.
+"""Static checks that the base stays free of concrete I/O and action semantics.
 
-Acceptance item: core files must not import playwright / a VLM SDK nor encode
-concrete observation or action vocabulary. Only the composition root and the
-adapters are allowed to know those details.
+Requirements: the base package must contain only the generic ports/loop/policy/
+mock modules - no browser, desktop, bash or model compatibility code, and no
+dependency on playwright / httpx / a VLM SDK. Such layers live outside this
+repository and are injected at composition time.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 import nano_cua
 
 PACKAGE_DIR = Path(nano_cua.__file__).parent
+EXPECTED_MODULES = {"__init__.py", "contracts.py", "runner.py", "policy.py", "mock.py"}
 CORE_MODULES = ("contracts.py", "runner.py", "policy.py", "mock.py")
 FORBIDDEN_IMPORT_ROOTS = {"playwright", "httpx", "openai", "anthropic", "requests", "aiohttp", "selenium"}
 FORBIDDEN_ADAPTER_MODULES = ("nano_cua.adapters", "nano_cua.cli")
@@ -61,6 +63,14 @@ def _literal_strings(tree: ast.Module) -> set[str]:
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
     return constants - docstrings
+
+
+def test_base_package_contains_only_core_modules():
+    """Requirement 1: the base itself contains no observation/action spaces."""
+    modules = {path.name for path in PACKAGE_DIR.glob("*.py")}
+    assert modules == EXPECTED_MODULES, f"unexpected base modules: {sorted(modules - EXPECTED_MODULES)}"
+    for absent in ("adapters", "cli.py", "demo_page.html"):
+        assert not (PACKAGE_DIR / absent).exists(), f"concrete adapter layer still inside the base: {absent}"
 
 
 def test_core_does_not_import_concrete_io_or_model_libraries():
