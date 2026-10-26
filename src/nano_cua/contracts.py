@@ -18,16 +18,16 @@ JsonMapping: TypeAlias = Mapping[str, Any]
 """Free-form mapping carried across a port boundary."""
 
 
-def frozen_mapping(data: Mapping[str, Any] | None = None) -> JsonMapping:
+def frozen_mapping(data: Mapping[str, Any]) -> JsonMapping:
     """Return a shallow read-only view of ``data``.
 
     Dataclass construction routes free-form mappings through this helper so a
     frozen message cannot be mutated after the fact; the core never sees live
     adapter state through a stale message.
     """
-    if data is not None and not isinstance(data, Mapping):
+    if not isinstance(data, Mapping):
         raise TypeError(f"expected a mapping, got {type(data).__name__}")
-    return MappingProxyType(dict(data or {}))
+    return MappingProxyType(dict(data))
 
 
 class ActionValidationError(ValueError):

@@ -122,6 +122,12 @@ class PlaywrightIO:
         started = time.perf_counter()
         if self._closed:
             return ActionResult(success=False, error="PlaywrightIO is closed", duration_s=time.perf_counter() - started)
+        if not isinstance(action, Action):
+            return ActionResult(
+                success=False,
+                error=f"rejected non-Action value of type {type(action).__name__}",
+                duration_s=time.perf_counter() - started,
+            )
         viewport = self._page.viewport_size or {"width": 0, "height": 0}
         try:
             normalized = normalize_action(

@@ -32,7 +32,7 @@ _ENV_API_KEY = "NANO_CUA_API_KEY"
 _ENV_MODEL = "NANO_CUA_MODEL"
 _ENV_CHANNEL = "NANO_CUA_BROWSER_CHANNEL"
 
-_MISSING_BROWSER_HINTS = ("Executable doesn't exist", "playwright install", "Failed to launch")
+_MISSING_BROWSER_HINTS = ("Executable doesn't exist", "is not found", "playwright install")
 
 
 def build_parser() -> argparse.ArgumentParser:

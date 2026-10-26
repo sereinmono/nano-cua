@@ -354,6 +354,10 @@ def test_messages_are_immutable_and_mappings_read_only():
 
     with pytest.raises(TypeError):
         Action(space="fake", kind="poke", args="not-a-mapping")  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        Action(space="fake", kind="poke", args=None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        Observation(source="fake", kind="image", payload=b"x", captured_at=0.0, metadata=None)  # type: ignore[arg-type]
 
 
 def test_runner_rejects_bad_limits():

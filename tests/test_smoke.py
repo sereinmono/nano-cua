@@ -18,7 +18,7 @@ from nano_cua.adapters.playwright_io import PlaywrightIO  # noqa: E402
 
 DEMO_PAGE = Path(nano_cua.__file__).parent / "demo_page.html"
 VIEWPORT = (640, 480)
-_MISSING_BROWSER_HINTS = ("Executable doesn't exist", "playwright install", "Failed to launch")
+_MISSING_BROWSER_HINTS = ("Executable doesn't exist", "is not found", "playwright install")
 
 
 async def _launch_or_skip() -> PlaywrightIO:
@@ -120,6 +120,10 @@ async def test_executor_rejects_untrusted_actions_without_side_effects():
         generated_code = await io.execute(Action(space="browser", kind="run_js", args={"code": "alert(1)"}))
         assert generated_code.success is False
         assert generated_code.error is not None and "kind" in generated_code.error
+
+        non_action = await io.execute("not-an-action")  # type: ignore[arg-type]
+        assert non_action.success is False
+        assert non_action.error is not None and "non-Action" in non_action.error
 
         status = await io.page.inner_text("#status")
         assert "Waiting for a click" in status
